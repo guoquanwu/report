@@ -1,3 +1,6 @@
 report
 *.log
 .idea/
+conf.yml
+go.sum
+*.sum
