@@ -2,5 +2,18 @@ package binance
 
 var Servers = "https://fapi.binance.com"
 
-var BTCFundingRate = "/fapi/v1/fundingRate?symbol=BTCUSDT&limit=1"
-var ETHFundingRate = "/fapi/v1/fundingRate?symbol=ETHUSDT&limit=1"
+var ImportantPair = []string{
+	"BTCUSDT",
+	"ETHUSDT",
+	"BCHUSDT",
+	"DOTUSDT",
+	"KSMUSDT",
+	"LTCUSDT",
+	"TRXUSDT",
+	"UNIUSDT",
+	"FILUSDT",
+	"YFIUSDT",
+	"LINKUSDT",
+}
+
+var FundingRate = "/fapi/v1/fundingRate?symbol=%s&limit=1"

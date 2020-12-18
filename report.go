@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"report/binance"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -29,6 +30,27 @@ type Response struct {
 	Symbol      string `json:"symbol"`
 	FundingTime int64  `json:"fundingTime"`
 	FundingRate string `json:"fundingRate"`
+}
+
+type Pair struct {
+	Pair string  `json:"pair"`
+	Rate float64 `json:"rate"`
+	Time string  `json:"time"`
+}
+
+type Pairs []Pair
+
+func (f Pairs) Len() int {
+	return len(f)
+}
+
+func (f Pairs) Swap(i, j int) {
+	f[i], f[j] = f[j], f[i]
+}
+
+// desc
+func (f Pairs) Less(i, j int) bool {
+	return f[i].Rate > f[j].Rate
 }
 
 type SlackRequestBody struct {
@@ -92,9 +114,6 @@ func initConf(path string) (Config, error) {
 func run() {
 	//spec := "0 10 0 * *" // 10:00 everyday
 	//spec := "0 * * * *" // every minutes
-	//c := cron.New(cron.WithChain(
-	//	cron.Recover(cron.DefaultLogger), // or use cron.DefaultLogger
-	//))
 	c := cron.New()
 	c.AddFunc(conf.Spec, check)
 	c.Start()
@@ -107,33 +126,54 @@ func test() {
 
 func check() {
 	fmt.Println("start")
-	url := binance.Servers + binance.BTCFundingRate
-	response, err := http.Get(url)
-	if err != nil {
-		fmt.Println(err)
-		return
+
+	results := Pairs{}
+	for _, item := range binance.ImportantPair {
+		url := fmt.Sprintf(binance.Servers+binance.FundingRate, item)
+		fmt.Println(url)
+		response, err := http.Get(url)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		defer response.Body.Close()
+		body, err := ioutil.ReadAll(response.Body)
+		result := []Response{}
+		err = json.Unmarshal(body, &result)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Println(result[0].FundingRate)
+		fundingRate, err := strconv.ParseFloat(result[0].FundingRate, 64)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		tm := time.Unix(result[0].FundingTime/1000, 0)
+		results = append(results, Pair{
+			Pair: item,
+			Rate: fundingRate * 100,
+			Time: tm.Format("2006-01-02 15:04:05"),
+		})
+		//if fundingRate < conf.FundingRateThreshold {
+		//	send(fundingRate)
+		//}
 	}
-	defer response.Body.Close()
-	body, err := ioutil.ReadAll(response.Body)
-	result := []Response{}
-	err = json.Unmarshal(body, &result)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Println(result[0].FundingRate)
-	fundingRate, err := strconv.ParseFloat(result[0].FundingRate, 64)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	if fundingRate < conf.FundingRateThreshold {
-		send(fundingRate)
-	}
+	sort.Sort(results)
+	send(formatResult(results))
 }
 
-func send(funding_rate float64) error {
-	msg := fmt.Sprintf("%s, 当前币安的btc-usdt永续合约费率为负，fee: %f", time.Now(), funding_rate)
+func formatResult(pairs []Pair) string {
+	var msg string
+	msg += pairs[0].Time + "\n"
+	for _, item := range pairs {
+		msg += fmt.Sprintf("Pair: %s, Rate: %f  \n\n", item.Pair, item.Rate)
+	}
+	return string(msg)
+}
+
+func send(msg string) error {
 	return SendSlackNotification(msg)
 }
 
